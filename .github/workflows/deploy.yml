@@ -25,23 +25,26 @@ jobs:
           '
       - name: Build
         run: ./build.sh
+
       - name: Create Release
         id: create_release
         uses: actions/create-release@v1
         env:
-              GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+           GITHUB_TOKEN: ${{ secrets.PAT_TOKEN }}
         with:
-              tag_name: ${{ github.ref }}
-              release_name: Release ${{ github.ref }}
-              draft: false
-              prerelease: false
+          tag_name: "v1.0.0-${{ github.run_number }}"  # 使用运行号确保 tag 唯一
+          release_name: "Release v1.0.0-${{ github.run_number }}"
+          body: "自动发布的 Release"
+          draft: false
+          prerelease: false
+
+
       - name: Upload Release Asset
-        id: upload-release-asset
         uses: actions/upload-release-asset@v1
         env:
-              GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         with:
-              upload_url: ${{ steps.create_release.outputs.upload_url }} # This pulls from the CREATE RELEASE step above, referencing it's ID to get its outputs object, which include a `upload_url`. See this blog post for more info: https://jasonet.co/posts/new-features-of-github-actions/#passing-data-to-future-steps
-              asset_path: output/update/Image/update.img
-              asset_name: update${{ github.ref }}.img
-              #asset_content_type: application/gzip
+          upload_url: ${{ steps.create_release.outputs.upload_url }}
+          asset_path: ./output/update/Image/update.img  # 需要发布的文件路径
+          asset_name: "update.img"  # 文件名
+          asset_content_type: application/octet-stream
