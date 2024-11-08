@@ -17,7 +17,12 @@ jobs:
       - name: init
         run: | 
           set -e
-          ./build.sh init -y || (echo "Init command failed"; cat init.log)
+          expect -c '
+          spawn ./build.sh init
+          expect "Choose an option:"
+          send "1\r"
+          expect eof
+          '
       - name: Build
         run: ./build.sh
       - name: Create Release
