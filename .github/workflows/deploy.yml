@@ -15,7 +15,9 @@ jobs:
                   qemu-user-static live-build bison flex fakeroot cmake gcc-multilib \
                   g++-multilib unzip device-tree-compiler ncurses-dev python2
       - name: init
-        run: ./build.sh init -y
+        run: | 
+          set -e
+          ./build.sh init -y || (echo "Init command failed"; cat init.log)
       - name: Build
         run: ./build.sh
       - name: Create Release
