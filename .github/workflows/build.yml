@@ -34,8 +34,7 @@ jobs:
 
       - name: Build firmware
         run: |
-          ./build.sh init
-          ./build.sh tspi-rk3566-ext39-ubuntu_defconfig
+          ./build.sh init 2
           ./build.sh
 
       - name: Locate update.img
