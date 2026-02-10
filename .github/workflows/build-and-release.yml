@@ -1,0 +1,85 @@
+name: Build Linux SDK and Release update.img
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 720
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+          lfs: true
+
+      - name: Show initial disk usage
+        run: |
+          echo "== Initial disk usage =="
+          df -h
+
+      - name: Free disk space on runner
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo apt-get clean
+          docker system prune -af || true
+          echo "== Disk usage after cleanup =="
+          df -h
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            git-lfs git ssh make gcc libssl-dev liblz4-tool expect \
+            g++ patchelf chrpath gawk texinfo diffstat binfmt-support \
+            qemu-user-static live-build bison flex fakeroot cmake gcc-multilib \
+            g++-multilib unzip device-tree-compiler ncurses-dev python2
+
+      - name: Pull LFS files
+        run: git lfs pull
+
+      - name: Build firmware
+        run: |
+          echo "2" | ./build.sh init
+          ./build.sh
+
+      - name: Show disk usage after build
+        if: always()
+        run: |
+          echo "== Disk usage after build =="
+          df -h
+          echo "== Top directories in workspace =="
+          du -h -d 1 . | sort -h | tail -n 20
+
+      - name: Locate update.img
+        id: find_image
+        run: |
+          IMAGE_PATH="$(find output -type f -path '*/update.img' | head -n 1)"
+          if [ -z "$IMAGE_PATH" ]; then
+            echo "No update.img found under output/"
+            exit 1
+          fi
+          echo "Found update image: $IMAGE_PATH"
+          echo "image_path=$IMAGE_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: update-img
+          path: ${{ steps.find_image.outputs.image_path }}
+
+      - name: Upload update.img to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.find_image.outputs.image_path }}
