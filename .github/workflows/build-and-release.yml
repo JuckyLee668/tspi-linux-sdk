@@ -53,6 +53,14 @@ jobs:
           echo "2" | ./build.sh init
           ./build.sh
 
+      - name: Show disk usage after build
+        if: always()
+        run: |
+          echo "== Disk usage after build =="
+          df -h
+          echo "== Top directories in workspace =="
+          du -h -d 1 . | sort -h | tail -n 20
+
       - name: Locate update.img
         id: find_image
         run: |
@@ -64,64 +72,66 @@ jobs:
           echo "Found update image: $IMAGE_PATH"
           echo "image_path=$IMAGE_PATH" >> "$GITHUB_OUTPUT"
 
-      - name: Split Large File into Chunks (No Compression)
-        id: split_image
+      - name: Compress and prepare release assets
+        id: package_image
         run: |
           set -euo pipefail
-          
-          # 获取上一步找到的镜像路径
+
           IMAGE_PATH="${{ steps.find_image.outputs.image_path }}"
           RELEASE_DIR="$GITHUB_WORKSPACE/release-assets"
           mkdir -p "$RELEASE_DIR"
-          
-          # 定义文件大小限制 (GitHub Release 限制为 2GB)
-          MAX_SIZE_BYTES=2147483648
-          # 分卷大小设为 1.9GB，留出安全余量
-          CHUNK_SIZE="1900M"
-          
-          echo "Splitting large image into chunks smaller than 2GB..."
-          # 使用 split 命令进行分卷
-          # -b: 指定分卷大小
-          # -d: 使用数字后缀 (000, 001, ...)
-          # -a 3: 后缀长度为3位
-          split -b ${CHUNK_SIZE} "$IMAGE_PATH" "$RELEASE_DIR/update.img.part-"
-          
-          # 验证分卷是否成功且每个分卷都小于限制
-          echo "== Validating chunk sizes =="
-          for chunk in "$RELEASE_DIR"/update.img.part-*; do
-            if [ -f "$chunk" ]; then
-              size=$(stat -c%s "$chunk")
-              if [ "$size" -gt "$MAX_SIZE_BYTES" ]; then
-                echo "Error: Chunk $chunk exceeds 2GB limit."
-                exit 1
-              fi
-              echo "✓ $chunk : $(du -h "$chunk" | cut -f1)"
+
+          COMPRESSED_PATH="$RELEASE_DIR/update.img.xz"
+          xz -T0 -9 -c "$IMAGE_PATH" > "$COMPRESSED_PATH"
+
+          MAX_SIZE=2147483648
+          COMPRESSED_SIZE=$(stat -c%s "$COMPRESSED_PATH")
+
+          if [ "$COMPRESSED_SIZE" -gt "$MAX_SIZE" ]; then
+            echo "Compressed file is still >2GB, splitting into chunks"
+            rm -f "$COMPRESSED_PATH"
+            xz -T0 -9 -c "$IMAGE_PATH" | split -b 1900m -d -a 3 - "$RELEASE_DIR/update.img.xz.part-"
+          fi
+
+          echo "Prepared release assets:"
+          ls -lh "$RELEASE_DIR"
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: update-img-packaged
+          path: release-assets/*
+
+      - name: Verify packaged files for release
+        if: github.event_name == 'release'
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+          FILES=(release-assets/*)
+          if [ ${#FILES[@]} -eq 0 ]; then
+            echo "No packaged files found under release-assets/"
+            exit 1
+          fi
+
+          MAX_SIZE=2147483648
+          for f in "${FILES[@]}"; do
+            size=$(stat -c%s "$f")
+            if [ "$size" -gt "$MAX_SIZE" ]; then
+              echo "Packaged file still exceeds 2GB: $f"
+              exit 1
             fi
           done
 
-      - name: Upload build artifact (for debugging)
-        uses: actions/upload-artifact@v4
-        with:
-          name: update-img-chunks
-          path: release-assets/*
+          echo "Release upload files:"
+          ls -lh "${FILES[@]}"
 
-      - name: Upload chunks to GitHub Release
+      - name: Upload packaged image to Release via gh cli
         if: github.event_name == 'release'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
           TAG_NAME="${{ github.event.release.tag_name }}"
           shopt -s nullglob
           FILES=(release-assets/*)
-          
-          if [ ${#FILES[@]} -eq 0 ]; then
-            echo "No files to upload!"
-            exit 1
-          fi
-          
-          echo "Uploading the following files to Release $TAG_NAME:"
-          ls -lh "${FILES[@]}"
-          
-          # 上传所有分卷文件
           gh release upload "$TAG_NAME" "${FILES[@]}" --clobber
