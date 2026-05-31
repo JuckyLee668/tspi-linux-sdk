@@ -47,7 +47,24 @@ jobs:
 
       - name: Pull LFS files
         run: git lfs pull
-
+      - name: Download Ubuntu rootfs from JuckyLee668/ubuntu22.04-rootfs
+        run: |
+          mkdir -p ubuntu
+          cd ubuntu
+          # Download the latest ubuntu.tar.gz from JuckyLee668/ubuntu22.04-rootfs releases
+          DOWNLOAD_URL=$(curl -s https://api.github.com/repos/JuckyLee668/ubuntu22.04-rootfs/releases/latest | grep -o '"browser_download_url": "[^"]*ubuntu.tar.gz[^"]*"' | head -1 | cut -d'"' -f4)
+          if [ -z "$DOWNLOAD_URL" ]; then
+            echo "Failed to find download URL"
+            exit 1
+          fi
+          echo "Downloading from: $DOWNLOAD_URL"
+          wget -O ubuntu.tar.gz "$DOWNLOAD_URL"
+          if [ ! -f ubuntu.tar.gz ]; then
+            echo "Failed to download ubuntu.tar.gz"
+            exit 1
+          fi
+          echo "Successfully downloaded ubuntu.tar.gz"
+          ls -lh ubuntu.tar.gz
       - name: Build firmware
         run: |
           echo "2" | ./build.sh init
