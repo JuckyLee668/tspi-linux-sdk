@@ -99,7 +99,9 @@ jobs:
           mkdir -p "$RELEASE_DIR"
 
           COMPRESSED_PATH="$RELEASE_DIR/update.img.7z"
-          7z a -t7z -m0=lzma2 -mx=9 -mfb=64 -md=32m -ms=on "$COMPRESSED_PATH" "$IMAGE_PATH"
+          
+          # Compress without directory structure - enter the file's directory and compress only the filename
+          (cd "$(dirname "$IMAGE_PATH")" && 7z a -t7z -m0=lzma2 -mx=9 -mfb=64 -md=32m -ms=on "$COMPRESSED_PATH" "$(basename "$IMAGE_PATH")")
 
           MAX_SIZE=2147483648
           COMPRESSED_SIZE=$(stat -c%s "$COMPRESSED_PATH")
